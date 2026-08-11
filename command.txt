@@ -1,0 +1,1 @@
+python3 -u signaling_server.py --port 8081 --tls-port 8082 --cert /home/gongbojun/html/certs/cert.pem --key /home/gongbojun/html/certs/key.pem
