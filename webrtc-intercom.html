@@ -1,0 +1,1531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebRTC 音视频对讲 - CV610</title>
+  <style>
+    :root {
+      --bg: #0f0f1a;
+      --surface: #1a1a2e;
+      --surface-hover: #22223a;
+      --primary: #6c5ce7;
+      --primary-glow: rgba(108, 92, 231, 0.4);
+      --danger: #e74c3c;
+      --success: #2ecc71;
+      --warning: #f39c12;
+      --text: #e0e0e0;
+      --text-secondary: #999;
+      --border: rgba(255, 255, 255, 0.08);
+      --radius: 16px;
+      --radius-sm: 10px;
+      --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* 背景动画粒子 */
+    .bg-particles {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .particle {
+      position: absolute;
+      border-radius: 50%;
+      background: var(--primary);
+      opacity: 0.08;
+      animation: floatUp linear infinite;
+    }
+
+    @keyframes floatUp {
+      0% { transform: translateY(100vh) scale(0); opacity: 0; }
+      10% { opacity: 0.08; }
+      90% { opacity: 0.08; }
+      100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+    }
+
+    /* 主容器 */
+    .app {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 20px 24px;
+      gap: 16px;
+    }
+
+    /* 顶部栏 */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-shrink: 0;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--primary), #a29bfe);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 4px 20px var(--primary-glow);
+    }
+
+    .logo h1 {
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+      background: linear-gradient(135deg, #e0e0e0, #a29bfe);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 50px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 500;
+      transition: var(--transition);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-secondary);
+      transition: var(--transition);
+    }
+
+    .status-dot.idle { background: var(--text-secondary); }
+    .status-dot.connecting { background: var(--warning); animation: pulse 1.2s ease-in-out infinite; }
+    .status-dot.connected { background: var(--success); box-shadow: 0 0 10px rgba(46, 204, 113, 0.5); }
+    .status-dot.error { background: var(--danger); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* 连接面板 */
+    .connect-panel {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .room-input {
+      flex: 1;
+      max-width: 280px;
+      padding: 12px 18px;
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 15px;
+      outline: none;
+      transition: var(--transition);
+      font-family: inherit;
+    }
+
+    .room-input::placeholder { color: var(--text-secondary); }
+    .room-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-glow);
+    }
+
+    .btn {
+      padding: 12px 24px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      transition: var(--transition);
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), #8360c3);
+      color: #fff;
+      box-shadow: 0 4px 15px var(--primary-glow);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 22px var(--primary-glow);
+    }
+
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
+    }
+
+    .btn-danger:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 22px rgba(231, 76, 60, 0.4);
+    }
+
+    .btn-danger:active { transform: translateY(0); }
+
+    /* 视频区域 */
+    .video-area {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .video-container {
+      position: relative;
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      transition: var(--transition);
+    }
+
+    .video-container.active {
+      border-color: var(--primary);
+      box-shadow: 0 0 30px rgba(108, 92, 231, 0.15);
+    }
+
+    /* 调换本地/远端视频位置: 远端(remote)排第一列/第一行, 本地(local)排第二 */
+    #remoteContainer { order: -1; }
+
+    .video-container video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .video-label {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      padding: 6px 14px;
+      border-radius: 50px;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(10px);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .video-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-secondary);
+      gap: 12px;
+    }
+
+    .video-placeholder svg {
+      opacity: 0.3;
+    }
+
+    .video-placeholder span {
+      font-size: 14px;
+    }
+
+    .video-muted-badge {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      padding: 6px 12px;
+      border-radius: 50px;
+      background: rgba(231, 76, 60, 0.8);
+      backdrop-filter: blur(10px);
+      font-size: 11px;
+      font-weight: 600;
+      color: #fff;
+      display: none;
+    }
+
+    .video-muted-badge.visible { display: block; }
+
+    /* 控制栏 */
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      flex-shrink: 0;
+      padding: 8px 0;
+    }
+
+    .ctrl-btn {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: var(--transition);
+      font-size: 20px;
+      position: relative;
+    }
+
+    .ctrl-btn:hover {
+      background: var(--surface-hover);
+      border-color: rgba(255, 255, 255, 0.15);
+      transform: translateY(-2px);
+    }
+
+    .ctrl-btn:active { transform: translateY(0); }
+
+    .ctrl-btn.off {
+      background: var(--danger);
+      border-color: var(--danger);
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
+    }
+
+    .ctrl-btn.off svg { stroke: #fff; }
+
+    .ctrl-btn.hangup {
+      width: 60px;
+      height: 60px;
+      background: var(--danger);
+      border: none;
+      color: #fff;
+      font-size: 24px;
+      box-shadow: 0 4px 20px rgba(231, 76, 60, 0.4);
+    }
+
+    .ctrl-btn.hangup:hover {
+      background: #c0392b;
+      box-shadow: 0 6px 25px rgba(231, 76, 60, 0.5);
+    }
+
+    .ctrl-btn.toggle-cam.off {
+      background: var(--warning);
+      border-color: var(--warning);
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3);
+    }
+
+    .ctrl-btn svg {
+      width: 22px;
+      height: 22px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .ctrl-label {
+      position: absolute;
+      bottom: -22px;
+      font-size: 10px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    /* 状态提示 */
+    .toast {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 24px;
+      border-radius: 50px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 14px;
+      font-weight: 500;
+      z-index: 100;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s;
+      backdrop-filter: blur(20px);
+    }
+
+    .toast.show { opacity: 1; }
+    .toast.success { border-color: var(--success); color: var(--success); }
+    .toast.error { border-color: var(--danger); color: var(--danger); }
+    .toast.warning { border-color: var(--warning); color: var(--warning); }
+
+    /* 调试日志面板 */
+    .debug-panel {
+      flex-shrink: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      max-height: 150px;
+      overflow-y: auto;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--text-secondary);
+      display: none;
+    }
+    .debug-panel.visible { display: block; }
+    .debug-panel .log-line { margin: 0; white-space: pre-wrap; word-break: break-all; }
+    .debug-panel .log-line.info { color: #a29bfe; }
+    .debug-panel .log-line.warn { color: var(--warning); }
+    .debug-panel .log-line.error { color: var(--danger); }
+    .debug-panel .log-line.success { color: var(--success); }
+    .debug-toggle {
+      font-size: 11px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      text-align: center;
+      padding: 4px;
+      flex-shrink: 0;
+    }
+
+    /* 响应式 */
+    @media (max-width: 768px) {
+      .app { padding: 12px; gap: 10px; }
+      .video-area { grid-template-columns: 1fr; }
+      .header { flex-wrap: wrap; }
+      .connect-panel { flex-wrap: wrap; }
+      .room-input { max-width: none; }
+      .ctrl-btn { width: 44px; height: 44px; }
+      .ctrl-btn svg { width: 18px; height: 18px; }
+      .ctrl-btn.hangup { width: 52px; height: 52px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 背景粒子 -->
+  <div class="bg-particles" id="particles"></div>
+
+  <!-- 提示 -->
+  <div class="toast" id="toast"></div>
+
+  <!-- 调试日志 -->
+  <div class="debug-panel" id="debugPanel"></div>
+  <div class="debug-toggle" onclick="toggleDebug()">[ 显示/隐藏调试日志 ]</div>
+
+  <div class="app">
+    <!-- 顶部 -->
+    <div class="header">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+          </svg>
+        </div>
+        <h1>WebRTC 对讲</h1>
+      </div>
+
+      <div class="status-badge">
+        <div class="status-dot idle" id="statusDot"></div>
+        <span id="statusText">未连接</span>
+      </div>
+    </div>
+
+    <!-- 连接面板 -->
+    <div class="connect-panel">
+      <input
+        type="text"
+        class="room-input"
+        id="roomInput"
+        value="t49"
+        placeholder="输入房间号，例如：room-001"
+        autocomplete="off"
+      />
+      <button class="btn btn-primary" id="connectBtn" onclick="toggleConnection()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14"/>
+          <path d="M12 5l7 7-7 7"/>
+        </svg>
+        加入房间
+      </button>
+    </div>
+
+    <!-- 视频区域 -->
+    <div class="video-area">
+      <!-- 本地视频 -->
+      <div class="video-container" id="localContainer">
+        <video id="localVideo" autoplay playsinline muted></video>
+        <div class="video-label">本地摄像头</div>
+        <div class="video-muted-badge" id="videoMutedBadge">摄像头已关闭</div>
+        <div class="video-placeholder" id="localPlaceholder">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 7l-7 5 7 5V7z"/>
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+          </svg>
+          <span>等待摄像头...</span>
+        </div>
+      </div>
+
+      <!-- 远端视频 -->
+      <div class="video-container" id="remoteContainer">
+        <video id="remoteVideo" autoplay playsinline muted></video>
+        <div class="video-label">远端设备（CV610）</div>
+        <div class="video-placeholder" id="remotePlaceholder">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          <span>等待远端设备接入...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 控制栏 -->
+    <div class="controls">
+      <button class="ctrl-btn toggle-mic" id="micBtn" onclick="toggleMic()" title="麦克风">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+        <span class="ctrl-label">麦克风</span>
+      </button>
+
+      <button class="ctrl-btn toggle-cam" id="camBtn" onclick="toggleCamera()" title="摄像头">
+        <svg viewBox="0 0 24 24">
+          <path d="M23 7l-7 5 7 5V7z"/>
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+        </svg>
+        <span class="ctrl-label">摄像头</span>
+      </button>
+
+      <button class="ctrl-btn hangup" id="hangupBtn" onclick="hangup()" title="挂断">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.68 13.31a16 16 0 0 0 2.41 2.41l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91"/>
+          <line x1="23" y1="1" x2="1" y2="23"/>
+        </svg>
+      </button>
+
+      <button class="ctrl-btn toggle-speaker" id="speakerBtn" onclick="toggleSpeaker()" title="扬声器">
+        <svg viewBox="0 0 24 24">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+        </svg>
+        <span class="ctrl-label">扬声器</span>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // ==================== 配置 ====================
+    const SIGNALING_URL = (location.protocol === 'https:' ? 'wss://113.45.77.64:8002' : 'ws://113.45.77.64:8000');
+    const ICE_SERVERS = {
+      iceServers: [
+        { urls: 'stun:113.45.77.64:3478' },
+        {
+          urls: 'turn:113.45.77.64:3478',
+          username: 'username',
+          credential: 'password',
+        },
+      ],
+      iceTransportPolicy: 'all',
+      iceCandidatePoolSize: 0,
+    };
+    const ICE_TIMEOUT_MS = 25000;  // ICE 连接超时
+    const ICE_RESTART_DELAY_MS = 2000;  // ICE 重启延迟
+
+    // ==================== DOM 元素 ====================
+    const roomInput = document.getElementById('roomInput');
+    const connectBtn = document.getElementById('connectBtn');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const localPlaceholder = document.getElementById('localPlaceholder');
+    const remotePlaceholder = document.getElementById('remotePlaceholder');
+    const localContainer = document.getElementById('localContainer');
+    const remoteContainer = document.getElementById('remoteContainer');
+    const videoMutedBadge = document.getElementById('videoMutedBadge');
+    const micBtn = document.getElementById('micBtn');
+    const camBtn = document.getElementById('camBtn');
+    const speakerBtn = document.getElementById('speakerBtn');
+    const hangupBtn = document.getElementById('hangupBtn');
+    const toast = document.getElementById('toast');
+
+    // ==================== 状态 ====================
+    let ws = null;
+    let pc = null;
+    let localStream = null;
+    let hasLocalVideo = false;
+    let roomId = '';
+    let isConnected = false;
+    let userHangingUp = false;  // 用户主动挂断标志：抑制 ws.onclose 的"信令连接失败"误报
+    let isMicOn = true;
+    let isCamOn = true;
+    let isSpeakerOn = true;
+    let toastTimer = null;
+    let iceTimeoutTimer = null;
+    let iceRestartCount = 0;
+    let maxIceRestarts = 3;
+    let localCandidatesSent = 0;
+    let remoteCandidatesReceived = 0;
+    let remoteMediaStream = null;  // 远端合成的 MediaStream
+
+    // ==================== 背景粒子 ====================
+    function createParticles() {
+      const container = document.getElementById('particles');
+      const count = 30;
+      for (let i = 0; i < count; i++) {
+        const particle = document.createElement('div');
+        particle.classList.add('particle');
+        const size = Math.random() * 4 + 2;
+        particle.style.width = size + 'px';
+        particle.style.height = size + 'px';
+        particle.style.left = Math.random() * 100 + '%';
+        particle.style.animationDuration = (Math.random() * 10 + 8) + 's';
+        particle.style.animationDelay = Math.random() * 10 + 's';
+        container.appendChild(particle);
+      }
+    }
+    createParticles();
+
+    // ==================== 调试日志 ====================
+    const debugPanel = document.getElementById('debugPanel');
+    const MAX_LOG_LINES = 200;
+    
+    function debugLog(msg, level = 'info') {
+      const ts = new Date().toLocaleTimeString();
+      const line = document.createElement('div');
+      line.className = 'log-line ' + level;
+      line.textContent = '[' + ts + '] ' + msg;
+      debugPanel.appendChild(line);
+      // 限制日志行数
+      while (debugPanel.children.length > MAX_LOG_LINES) {
+        debugPanel.removeChild(debugPanel.firstChild);
+      }
+      debugPanel.scrollTop = debugPanel.scrollHeight;
+      console.log('[WebRTC]', msg);
+    }
+
+    function toggleDebug() {
+      debugPanel.classList.toggle('visible');
+    }
+
+    // ==================== Toast ====================
+    function showToast(message, type = '') {
+      if (toastTimer) clearTimeout(toastTimer);
+      toast.textContent = message;
+      toast.className = 'toast ' + type + ' show';
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2500);
+      debugLog('[Toast] ' + message, type === 'error' ? 'error' : type === 'warning' ? 'warn' : 'info');
+    }
+
+    // ==================== 状态更新 ====================
+    function setStatus(status) {
+      statusDot.className = 'status-dot ' + status;
+      switch (status) {
+        case 'idle': statusText.textContent = '未连接'; break;
+        case 'connecting': statusText.textContent = '连接中...'; break;
+        case 'connected': statusText.textContent = '已连接'; break;
+        case 'error': statusText.textContent = '连接失败'; break;
+      }
+      remoteContainer.classList.toggle('active', status === 'connected');
+    }
+
+    // ==================== WebSocket 信令 ====================
+    let isInitiator = true;  // 浏览器默认作为发起方
+    let peerJoined = false;
+    let pendingCandidates = [];  // 在 setRemoteDescription 之前到达的候选
+    let offerCreated = false;  // 防止重复创建 Offer
+    let remoteOfferReceived = false;  // 防止与远端 Offer 冲突
+    let offerDebounceTimer = null;  // Offer 防抖计时器
+    let latestOfferMsg = null;  // 最新的 Offer 消息
+
+    function connectSignaling() {
+      return new Promise((resolve, reject) => {
+        ws = new WebSocket(SIGNALING_URL);
+
+        ws.onopen = () => {
+          userHangingUp = false;  // 新连接开始，复位挂断标志
+          debugLog('WS 已连接，加入房间: ' + roomId, 'success');
+          ws.send(JSON.stringify({
+            type: 'join',
+            room: roomId
+          }));
+          setStatus('connecting');
+          showToast('已加入房间，等待对端设备...', 'success');
+          
+          // 如果 30 秒内没收到远端 Offer，浏览器主动发起
+          // 注意：即使收到远端 Offer（可能是缓存），也优先创建自己的 Offer
+          const offerTimer = setTimeout(async () => {
+            if (!pc && !offerCreated && !remoteOfferReceived && ws && ws.readyState === WebSocket.OPEN) {
+              debugLog('未收到有效远端Offer，浏览器主动发起', 'info');
+              isInitiator = true;
+              await createOffer();
+            }
+          }, 30000);
+
+          // 存储定时器以便取消
+          ws._offerTimer = offerTimer;
+          resolve();
+        };
+
+        ws.onmessage = async (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            debugLog('WS 收到: type=' + msg.type + (msg.sdp ? ' sdp_len=' + msg.sdp.length : ''));
+
+            switch (msg.type) {
+              case 'joined':
+                debugLog('已加入房间: ' + (msg.room || roomId), 'success');
+                break;
+
+              case 'offer':
+                // 收到远端 Offer → 取消浏览器主动发起定时器
+                if (ws._offerTimer) {
+                  clearTimeout(ws._offerTimer);
+                  ws._offerTimer = null;
+                }
+                // 如果浏览器已经创建了 Offer，说明这是自己缓存的 Offer，忽略
+                if (offerCreated) {
+                  debugLog('忽略缓存的 Offer（浏览器已是发起方）', 'warn');
+                  break;
+                }
+                // 收到远端 Offer → 使用防抖，只处理最后一个
+                remoteOfferReceived = true;
+                latestOfferMsg = msg;
+                debugLog('收到远端 Offer，防抖等待... (SDP长度=' + (msg.sdp||'').length + ')', 'info');
+
+                // 清除之前的防抖计时器
+                if (offerDebounceTimer) clearTimeout(offerDebounceTimer);
+
+                // 500ms 后处理最新的 Offer（跳过缓存的旧 Offer）
+                offerDebounceTimer = setTimeout(async () => {
+                  offerDebounceTimer = null;
+                  if (latestOfferMsg) {
+                    const msg = latestOfferMsg;
+                    latestOfferMsg = null;
+                    if (pc) {
+                      debugLog('关闭旧连接，处理最新 Offer (SDP长度=' + (msg.sdp||'').length + ')', 'warn');
+                      closePeerConnection();
+                    }
+                    debugLog('处理远端 Offer (SDP长度=' + (msg.sdp||'').length + ')', 'info');
+                    isInitiator = false;
+                    await handleOffer(msg);
+                  }
+                }, 500);
+                break;
+
+              case 'answer':
+                debugLog('收到 Answer (SDP长度=' + (msg.sdp||'').length + ')', 'info');
+                await handleAnswer(msg);
+                break;
+
+              case 'candidate':
+                await handleCandidate(msg);
+                break;
+
+              case 'peer_joined':
+              case 'peer-joined':
+                debugLog('对端已加入房间', 'success');
+                showToast('对端设备已加入房间', 'success');
+                peerJoined = true;
+                // 如果还没创建 PC，作为发起方创建 Offer
+                if (!pc && !offerCreated) {
+                  debugLog('对端已加入，延迟 1s 后创建 Offer...', 'info');
+                  setTimeout(async () => {
+                    if (peerJoined && !pc && !offerCreated) {
+                      isInitiator = true;
+                      await createOffer();
+                    }
+                  }, 1000);
+                }
+                break;
+
+              case 'peer_left':
+              case 'peer-left':
+                debugLog('对端离开房间', 'warn');
+                showToast('对端设备已离开', 'warning');
+                closePeerConnection();
+                setStatus('idle');
+                remotePlaceholder.style.display = 'flex';
+                peerJoined = false;
+                offerCreated = false;
+                break;
+
+              case 'error':
+                debugLog('服务器错误: ' + (msg.message || ''), 'error');
+                showToast('错误: ' + msg.message, 'error');
+                break;
+
+              case 'ping':
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify({ type: 'pong' }));
+                }
+                break;
+
+              default:
+                debugLog('未知消息类型: ' + msg.type, 'warn');
+            }
+          } catch (err) {
+            debugLog('消息解析失败: ' + err.message, 'error');
+          }
+        };
+
+        ws.onclose = (event) => {
+          debugLog('WS 关闭: code=' + event.code + ' reason=' + event.reason, 'warn');
+          ws = null;
+          if (!isConnected && !userHangingUp) {
+            setStatus('error');
+            updateConnectButton();
+            showToast('信令连接失败，请重试', 'error');
+          }
+          // 信令断开不清理 PC，保持现有音视频通道
+        };
+
+        ws.onerror = (err) => {
+          console.error('[WS] 连接错误:', err);
+          reject(new Error('WebSocket 连接失败'));
+        };
+      });
+    }
+
+    // ==================== WebRTC ====================
+    // 设置 PC 事件（复用代码）
+    function setupPeerConnectionEvents() {
+      if (!pc) return;
+      
+      // ICE Candidate 事件
+      pc.onicecandidate = (event) => {
+        if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+          const cand = event.candidate;
+          localCandidatesSent++;
+          
+          /* ⭐ trickle candidate 也做 mDNS 替换：Chrome 通过 onicecandidate
+           * 单独发的 host 候选，SDP 字符串里是 xxxx.local（假 IP），设备无法解析。
+           * cand.port 是真实端口；IP 若为 .local 则换成 LOCAL_HOST_IP。
+           * 注意：不能改 offer/answer 里的（已由 mungeSdp 处理），这里是 trickle 的。 */
+          let candStr = cand.candidate;
+          if (candStr && candStr.includes('.local')) {
+            const newCand = candStr.replace(/(\S+\.local)( \d+ typ host)/, LOCAL_HOST_IP + '$2');
+            debugLog('trickle mDNS 替换: ' + candStr.substring(0,50) + ' → ' + newCand.substring(0,50), 'info');
+            candStr = newCand;
+          }
+          
+          const candMsg = {
+            type: 'candidate',
+            sdp: candStr
+          };
+          if (cand.sdpMid !== null) candMsg.sdpMid = cand.sdpMid;
+          if (cand.sdpMLineIndex !== null) candMsg.sdpMLineIndex = cand.sdpMLineIndex;
+          ws.send(JSON.stringify(candMsg));
+        } else if (!event.candidate) {
+          debugLog('ICE 候选收集完成 (共' + localCandidatesSent + '个)', 'info');
+        }
+      };
+
+      // ICE 收集状态
+      pc.onicegatheringstatechange = () => {
+        debugLog('ICE收集状态: ' + pc.iceGatheringState, 'info');
+      };
+
+      // ICE 连接状态
+      pc.oniceconnectionstatechange = () => {
+        const state = pc.iceConnectionState;
+        debugLog('ICE状态: ' + state + ' | 本地候选:' + localCandidatesSent + ' 远端候选:' + remoteCandidatesReceived + ' | 收集:' + pc.iceGatheringState, 
+          state === 'connected' || state === 'completed' ? 'success' : 
+          state === 'failed' ? 'error' : 'info');
+
+        switch (state) {
+          case 'connected':
+          case 'completed':
+            setStatus('connected');
+            isConnected = true;
+            updateConnectButton();
+            showToast('音视频通道已建立', 'success');
+            debugLog('ICE 连接成功! 本地候选:' + localCandidatesSent + ' 远端候选:' + remoteCandidatesReceived, 'success');
+            break;
+
+          case 'disconnected':
+            debugLog('ICE 断开，等待自动恢复...', 'warn');
+            break;
+
+          case 'failed':
+            debugLog('ICE 失败', 'error');
+            showToast('ICE 连接失败', 'error');
+            setStatus('error');
+            break;
+
+          case 'closed':
+            debugLog('ICE 连接关闭', 'info');
+            break;
+        }
+      };
+
+      // 连接状态
+      pc.onconnectionstatechange = () => {
+        debugLog('PC连接状态: ' + pc.connectionState, 'info');
+        if (pc.connectionState === 'failed') {
+          setStatus('error');
+        }
+      };
+
+      // 接收远端流
+      pc.ontrack = (event) => {
+        debugLog('收到远端流: track=' + event.track.kind + ' streams=' + event.streams.length, 'success');
+
+        if (!remoteMediaStream) {
+          if (event.streams && event.streams[0]) {
+            remoteMediaStream = event.streams[0];
+          } else {
+            remoteMediaStream = new MediaStream();
+          }
+        }
+
+        const track = event.track;
+        const existingTracks = remoteMediaStream.getTracks();
+        const alreadyExists = existingTracks.some(t => t.id === track.id);
+        if (!alreadyExists) {
+          remoteMediaStream.addTrack(track);
+          debugLog('远端' + track.kind + '轨道已添加: ' + track.id, 'success');
+        }
+
+        if (!remoteVideo.srcObject || remoteVideo.srcObject !== remoteMediaStream) {
+          remoteVideo.srcObject = remoteMediaStream;
+          remotePlaceholder.style.display = 'none';
+          debugLog('远端视频流已设置', 'success');
+
+          remoteVideo.onloadedmetadata = () => {
+            debugLog('远端视频元数据已加载: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight, 'success');
+            // 元数据加载后尝试播放（先静音绕过 autoplay 限制）
+            remoteVideo.muted = true;
+            remoteVideo.play().then(() => {
+              debugLog('远端视频开始播放（静音模式）', 'success');
+              // 播放成功后恢复扬声器状态
+              remoteVideo.muted = !isSpeakerOn;
+            }).catch(e => debugLog('视频播放失败: ' + e.message, 'warn'));
+          };
+          remoteVideo.onplaying = () => {
+            debugLog('远端视频开始播放', 'success');
+          };
+          remoteVideo.onwaiting = () => {
+            debugLog('远端视频缓冲中...', 'warn');
+          };
+        }
+
+        track.onunmute = () => {
+          debugLog('远端' + track.kind + '轨道数据开始流入 (unmuted)', 'success');
+          if (track.kind === 'video') {
+            remoteVideo.play().catch(e => debugLog('视频播放失败: ' + e.message, 'warn'));
+          }
+        };
+        track.onmute = () => {
+          debugLog('远端' + track.kind + '轨道数据停止流入 (muted)', 'warn');
+        };
+
+        track.onended = () => {
+          debugLog('远端' + track.kind + '轨道结束', 'warn');
+          if (remoteMediaStream) {
+            remoteMediaStream.removeTrack(track);
+            if (remoteMediaStream.getTracks().length === 0) {
+              remotePlaceholder.style.display = 'flex';
+              remoteVideo.srcObject = null;
+            }
+          }
+        };
+      };
+
+      pc.ondatachannel = (event) => {
+        debugLog('收到 DataChannel: ' + event.channel.label, 'info');
+      };
+    }
+
+    async function createPeerConnection(isOfferer = false) {
+      // 保存已缓存的候选（closePeerConnection 会清空）
+      const savedPending = pendingCandidates.slice();
+      if (pc) closePeerConnection();
+
+      pc = new RTCPeerConnection(ICE_SERVERS);
+      localCandidatesSent = 0;
+      remoteCandidatesReceived = savedPending.length;
+      pendingCandidates = savedPending;
+      remoteMediaStream = null;
+
+      // 添加本地流
+      if (localStream) {
+        localStream.getTracks().forEach(track => {
+          pc.addTrack(track, localStream);
+        });
+      }
+
+      // 发起方：无本地流时添加 transceiver 确保能接收
+      if (isOfferer && !localStream) {
+        pc.addTransceiver('video', { direction: 'sendrecv' });
+        pc.addTransceiver('audio', { direction: 'sendrecv' });
+        debugLog('无本地流，添加 sendrecv transceiver 用于接收', 'info');
+      }
+
+      // 设置编解码偏好
+      setCodecPreferences();
+
+      // 设置事件
+      setupPeerConnectionEvents();
+
+      return pc;
+    }
+
+    function setCodecPreferences() {
+      if (!pc) return;
+      try {
+        const transceivers = pc.getTransceivers();
+        transceivers.forEach(transceiver => {
+          const kind = transceiver.receiver?.track?.kind || transceiver.sender?.track?.kind;
+          if (kind === 'video') {
+            const codecs = RTCRtpReceiver.getCapabilities('video')?.codecs || [];
+            const preferred = codecs.filter(c => c.mimeType.toLowerCase().includes('h264'));
+            if (preferred.length > 0) {
+              try { transceiver.setCodecPreferences(preferred); } catch (e) {}
+            }
+          }
+          if (kind === 'audio') {
+            const codecs = RTCRtpReceiver.getCapabilities('audio')?.codecs || [];
+            const preferred = codecs.filter(c => c.mimeType.includes('opus'));
+            if (preferred.length > 0) {
+              try { transceiver.setCodecPreferences(preferred); } catch (e) {}
+            }
+          }
+        });
+        debugLog('编解码偏好已设置 (H.264 + Opus)', 'info');
+      } catch(e) {
+        debugLog('设置编解码偏好失败: ' + e.message, 'warn');
+      }
+    }
+
+    // ICE 重启
+    async function restartIce() {
+      if (!pc || !ws || ws.readyState !== WebSocket.OPEN) return;
+      
+      iceRestartCount++;
+      debugLog('ICE 重启 #' + iceRestartCount + '/' + maxIceRestarts, 'warn');
+      
+      try {
+        const offer = await pc.createOffer({ iceRestart: true });
+        await pc.setLocalDescription(offer);
+        
+        ws.send(JSON.stringify({
+          type: 'offer',
+          sdp: pc.localDescription.sdp
+        }));
+        debugLog('ICE重启 Offer 已发送', 'info');
+      } catch (err) {
+        debugLog('ICE重启失败: ' + err.message, 'error');
+      }
+    }
+
+    // ⭐ SDP munging：Chrome 默认用 mDNS 隐藏 host 候选的真实 IP
+    //    （candidate 里显示成 xxxx.local），设备端 libdatachannel 无法解析 mDNS，
+    //    导致同网段也无法 host 直连、ICE Failed。这里把 .local host 候选替换成
+    //    Windows 本机真实 IPv4，让设备能直接连。
+    //    注：Windows 的局域网 IP（以太网适配器 IPv4），如 192.168.80.133。
+    const LOCAL_HOST_IP = '192.168.80.133';
+    function mungeSdp(sdp) {
+      // 优先从本地候选提取真实 IPv4（若浏览器未启用 mDNS，localDescription 里
+      // 就是真实 IP），否则用 LOCAL_HOST_IP 兜底替换 .local。
+      let realIp = null;
+      try {
+        if (pc && pc.localDescription) {
+          const re = /a=candidate:\S+ \d+ udp \d+ (\d+\.\d+\.\d+\.\d+) \d+ typ host/g;
+          let m;
+          while ((m = re.exec(pc.localDescription.sdp)) !== null) {
+            realIp = m[1]; break;
+          }
+        }
+      } catch (e) {}
+      if (!realIp) realIp = LOCAL_HOST_IP;
+      // 把 .local host 候选替换成真实 IPv4
+      if (sdp.includes('.local')) {
+        debugLog('SDP munging: 将 .local host 候选替换为 ' + realIp, 'info');
+        return sdp.replace(/(a=candidate:\S+ \d+ udp \d+ )[\w-]+\.local(\s+\d+ typ host)/g,
+          '$1' + realIp + '$2');
+      }
+      return sdp;
+    }
+
+    async function createOffer() {
+      try {
+        createPeerConnection(true);  // 浏览器作为发起方
+        if (!pc) return;
+
+        offerCreated = true;
+        debugLog('创建 Offer (发起方)...', 'info');
+
+        // 使用 addTransceiver 时，不需要 offerToReceiveXxx 选项
+        const offer = localStream
+          ? await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
+          : await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        // 等待 ICE 收集完成再发送 Offer，避免 setRemoteDescription 时 ICE 重置
+        debugLog('等待 ICE 收集完成...', 'info');
+        await new Promise((resolve, reject) => {
+          if (pc.iceGatheringState === 'complete') {
+            resolve();
+            return;
+          }
+          const timeout = setTimeout(() => {
+            debugLog('ICE 收集超时(10s)，当前状态:' + pc.iceGatheringState, 'warn');
+            resolve();
+          }, 10000);
+          pc.onicegatheringstatechange = () => {
+            debugLog('ICE收集状态: ' + pc.iceGatheringState, 'info');
+            if (pc.iceGatheringState === 'complete') {
+              clearTimeout(timeout);
+              resolve();
+            }
+          };
+        });
+
+        debugLog('Offer 已创建，SDP长度:' + pc.localDescription.sdp.length + ' 发送中...', 'info');
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'offer',
+            sdp: mungeSdp(pc.localDescription.sdp)
+          }));
+          debugLog('Offer 已发送', 'success');
+        }
+      } catch (err) {
+        debugLog('创建 Offer 失败: ' + err.message, 'error');
+        offerCreated = false;
+        showToast('创建连接失败: ' + err.message, 'error');
+        setStatus('error');
+      }
+    }
+
+    async function handleOffer(msg) {
+      try {
+        debugLog('处理远端 Offer, SDP长度:' + (msg.sdp || '').length, 'info');
+        // 接收方：先创建 PC（不添加 transceiver，让 setRemoteDescription 自动创建）
+        if (pc) closePeerConnection();
+        pc = new RTCPeerConnection(ICE_SERVERS);
+        localCandidatesSent = 0;
+        // 保持已缓存的候选计数（closePeerConnection 会重置为 0）
+        remoteCandidatesReceived = pendingCandidates.length;
+        remoteMediaStream = null;
+        
+        // 设置 ICE 和 track 事件（复用 createPeerConnection 的逻辑）
+        setupPeerConnectionEvents();
+        if (!pc) return;
+
+        await pc.setRemoteDescription(new RTCSessionDescription({
+          type: 'offer',
+          sdp: msg.sdp
+        }));
+        debugLog('已设置 Remote Description (Offer)', 'success');
+
+        // 在 setRemoteDescription 之后设置编解码偏好（此时 transceiver 才存在）
+        try {
+          const transceivers = pc.getTransceivers();
+          transceivers.forEach(transceiver => {
+            const kind = transceiver.receiver?.track?.kind || transceiver.sender?.track?.kind;
+            if (kind === 'video') {
+              const codecs = RTCRtpReceiver.getCapabilities('video')?.codecs || [];
+              const preferred = codecs.filter(c => c.mimeType.toLowerCase().includes('h264'));
+              if (preferred.length > 0) {
+                try { transceiver.setCodecPreferences(preferred); } catch (e) {}
+                debugLog('视频编解码偏好已设置: H.264', 'info');
+              }
+            }
+            if (kind === 'audio') {
+              const codecs = RTCRtpReceiver.getCapabilities('audio')?.codecs || [];
+              const preferred = codecs.filter(c => c.mimeType.includes('opus'));
+              if (preferred.length > 0) {
+                try { transceiver.setCodecPreferences(preferred); } catch (e) {}
+                debugLog('音频编解码偏好已设置: Opus', 'info');
+              }
+            }
+          });
+        } catch (e) {
+          debugLog('设置编解码偏好失败: ' + e.message, 'warn');
+        }
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        debugLog('发送 Answer, SDP长度:' + pc.localDescription.sdp.length, 'info');
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'answer',
+            sdp: pc.localDescription.sdp
+          }));
+        }
+
+        showToast('正在建立音视频通道...', 'success');
+        flushPendingCandidates();
+      } catch (err) {
+        debugLog('处理 Offer 失败: ' + err.message, 'error');
+        showToast('处理 Offer 失败: ' + err.message, 'error');
+        setStatus('error');
+      }
+    }
+
+    async function handleAnswer(msg) {
+      try {
+        if (!pc) {
+          debugLog('handleAnswer: pc 不存在', 'warn');
+          return;
+        }
+        // 处理 Answer（放宽条件：只要 PC 存在且本地描述已设置就处理）
+        if (pc.signalingState !== 'have-local-offer' && pc.signalingState !== 'stable') {
+          debugLog('忽略 Answer（PC状态=' + pc.signalingState + '）', 'warn');
+          return;
+        }
+        debugLog('处理 Answer, SDP长度:' + (msg.sdp || '').length, 'info');
+        await pc.setRemoteDescription(new RTCSessionDescription({
+          type: 'answer',
+          sdp: msg.sdp
+        }));
+        debugLog('已设置 Remote Description (Answer)', 'success');
+        showToast('正在建立音视频通道...', 'success');
+        flushPendingCandidates();
+      } catch (err) {
+        debugLog('处理 Answer 失败: ' + err.message, 'error');
+        showToast('处理 Answer 失败: ' + err.message, 'error');
+      }
+    }
+
+    function flushPendingCandidates() {
+      if (pendingCandidates.length > 0) {
+        debugLog('刷新 ' + pendingCandidates.length + ' 个待处理候选', 'info');
+        const candidates = pendingCandidates.slice();
+        pendingCandidates = [];
+        candidates.forEach(c => {
+          pc.addIceCandidate(c).catch(err => {
+            debugLog('刷新候选失败: ' + err.message, 'error');
+          });
+        });
+      }
+    }
+
+    async function handleCandidate(msg) {
+      let candidateStr = '';
+      try {
+        candidateStr = msg.sdp || msg.candidate || '';
+        if (!candidateStr) {
+          return;
+        }
+        if (candidateStr.startsWith('a=')) {
+          candidateStr = candidateStr.substring(2);
+        }
+        // 规范化：设备端发送的候选使用大写 UDP，转为小写
+        candidateStr = candidateStr.replace(/\bUDP\b/g, 'udp').replace(/\bTCP\b/g, 'tcp');
+
+        const iceInit = { candidate: candidateStr };
+        if (msg.sdpMid !== undefined && msg.sdpMid !== null && msg.sdpMid !== '') {
+          iceInit.sdpMid = msg.sdpMid;
+        } else if (msg.sdpMLineIndex !== undefined && msg.sdpMLineIndex !== null) {
+          iceInit.sdpMLineIndex = msg.sdpMLineIndex;
+        } else {
+          iceInit.sdpMLineIndex = 0;
+        }
+        const iceCandidate = new RTCIceCandidate(iceInit);
+        remoteCandidatesReceived++;
+
+        if (!pc || !pc.remoteDescription) {
+          debugLog('缓存候选#' + remoteCandidatesReceived + ': ' + candidateStr.substring(0, 50), 'info');
+          pendingCandidates.push(iceCandidate);
+          return;
+        }
+
+        await pc.addIceCandidate(iceCandidate);
+        debugLog('已添加远端候选#' + remoteCandidatesReceived + ': ' + candidateStr.substring(0, 60), 'info');
+      } catch (err) {
+        debugLog('添加候选失败: ' + err.message + ' | ' + candidateStr.substring(0, 50), 'error');
+      }
+    }
+
+    function closePeerConnection() {
+      if (pc) {
+        pc.close();
+        pc = null;
+      }
+      if (iceTimeoutTimer) {
+        clearTimeout(iceTimeoutTimer);
+        iceTimeoutTimer = null;
+      }
+      remoteVideo.srcObject = null;
+      remotePlaceholder.style.display = 'flex';
+      remoteMediaStream = null;
+      isConnected = false;
+      pendingCandidates = [];
+      offerCreated = false;
+      localCandidatesSent = 0;
+      remoteCandidatesReceived = 0;
+      updateConnectButton();
+    }
+
+    // ==================== 媒体控制 ====================
+    async function startLocalStream() {
+      const audioOpts = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      };
+      const videoOpts = {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30 },
+      };
+      // 先尝试 音频+视频；台式机无摄像头时单独音频可用，不能因视频失败丢弃麦克风
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: audioOpts, video: videoOpts });
+        hasLocalVideo = true;
+      } catch (err) {
+        console.warn('[Media] 音视频获取失败(' + err.message + ')，仅尝试音频...');
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({ audio: audioOpts, video: false });
+          hasLocalVideo = false;
+          console.log('[Media] 仅音频流已获取');
+        } catch (err2) {
+          console.warn('[Media] 音频获取也失败，进入仅接收模式:', err2.message);
+          showToast('无可用麦克风，仅接收远端音视频', 'warning');
+          localStream = null;
+          isMicOn = false;
+          isCamOn = false;
+          micBtn.classList.add('off');
+          camBtn.classList.add('off');
+          videoMutedBadge.classList.add('visible');
+          localPlaceholder.innerHTML = '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>仅接收模式（无麦克风）</span>';
+          return;
+        }
+      }
+      localVideo.srcObject = localStream;
+      localPlaceholder.style.display = 'none';
+      localContainer.classList.add('active');
+      isMicOn = true;
+      isCamOn = !!hasLocalVideo;
+      micBtn.classList.remove('off');
+      camBtn.classList.toggle('off', !hasLocalVideo);
+      videoMutedBadge.classList.remove('visible');
+      console.log('[Media] 本地媒体流已获取' + (hasLocalVideo ? '' : '（仅音频）'));
+    }
+
+    function stopLocalStream() {
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+      }
+      localVideo.srcObject = null;
+      localPlaceholder.style.display = 'flex';
+      localContainer.classList.remove('active');
+    }
+
+    function toggleMic() {
+      if (!localStream) return;
+      isMicOn = !isMicOn;
+      localStream.getAudioTracks().forEach(track => {
+        track.enabled = isMicOn;
+      });
+      micBtn.classList.toggle('off', !isMicOn);
+      showToast(isMicOn ? '麦克风已开启' : '麦克风已静音');
+    }
+
+    function toggleCamera() {
+      if (!localStream) return;
+      isCamOn = !isCamOn;
+      localStream.getVideoTracks().forEach(track => {
+        track.enabled = isCamOn;
+      });
+      camBtn.classList.toggle('off', !isCamOn);
+      videoMutedBadge.classList.toggle('visible', !isCamOn);
+      showToast(isCamOn ? '摄像头已开启' : '摄像头已关闭');
+    }
+
+    function toggleSpeaker() {
+      isSpeakerOn = !isSpeakerOn;
+      remoteVideo.muted = !isSpeakerOn;
+      speakerBtn.classList.toggle('off', !isSpeakerOn);
+      showToast(isSpeakerOn ? '扬声器已开启' : '扬声器已静音');
+    }
+
+    // ==================== 连接/断开 ====================
+    async function toggleConnection() {
+      if (isConnected || ws) {
+        // 断开
+        hangup();
+      } else {
+        // 连接
+        await connect();
+      }
+    }
+
+    async function connect() {
+      roomId = roomInput.value.trim();
+      if (!roomId) {
+        showToast('请输入房间号', 'warning');
+        roomInput.focus();
+        return;
+      }
+
+      connectBtn.disabled = true;
+      connectBtn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 6v6l4 2"/>
+        </svg>
+        连接中...
+      `;
+
+      try {
+        // 等待媒体设备就绪（无设备则快速失败，进入仅接收模式）
+        await startLocalStream();
+        
+        await connectSignaling();
+      } catch (err) {
+        debugLog('连接失败: ' + err.message, 'error');
+        connectBtn.disabled = false;
+        updateConnectButton();
+        setStatus('error');
+        stopLocalStream();
+      }
+    }
+
+    function hangup() {
+      // 发送离开消息
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'leave',
+          room: roomId
+        }));
+      }
+
+      userHangingUp = true;   // 标记用户主动挂断，onclose 不再报"信令连接失败"
+      cleanup();
+      showToast('已挂断');
+    }
+
+    function cleanup() {
+      closePeerConnection();
+
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+
+      stopLocalStream();
+      setStatus('idle');
+      videoMutedBadge.classList.remove('visible');
+      micBtn.classList.remove('off');
+      camBtn.classList.remove('off');
+      speakerBtn.classList.remove('off');
+      isMicOn = true;
+      isCamOn = true;
+      isSpeakerOn = true;
+      isInitiator = true;
+      peerJoined = false;
+      pendingCandidates = [];
+      offerCreated = false;
+      remoteOfferReceived = false;
+      if (offerDebounceTimer) { clearTimeout(offerDebounceTimer); offerDebounceTimer = null; }
+      latestOfferMsg = null;
+      iceRestartCount = 0;
+      remoteVideo.muted = false;
+
+      updateConnectButton();
+    }
+
+    function updateConnectButton() {
+      connectBtn.disabled = false;
+      if (isConnected || ws) {
+        connectBtn.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <line x1="9" y1="9" x2="15" y2="15"/>
+            <line x1="15" y1="9" x2="9" y2="15"/>
+          </svg>
+          断开连接
+        `;
+        connectBtn.classList.remove('btn-primary');
+        connectBtn.classList.add('btn-danger');
+      } else {
+        connectBtn.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14"/>
+            <path d="M12 5l7 7-7 7"/>
+          </svg>
+          加入房间
+        `;
+        connectBtn.classList.add('btn-primary');
+        connectBtn.classList.remove('btn-danger');
+      }
+    }
+
+    // ==================== 键盘事件 ====================
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && document.activeElement === roomInput) {
+        toggleConnection();
+      }
+    });
+
+    // ==================== 初始化 ====================
+    updateConnectButton();
+    debugLog('WebRTC 对讲页面已就绪 | 信令:' + SIGNALING_URL, 'success');
+    debugLog('STUN: 113.45.77.64:3478 | TURN: 113.45.77.64:3478 (relay)', 'info');
+  </script>
+
+  <style>
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</body>
+</html>
